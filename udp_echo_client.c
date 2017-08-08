@@ -27,7 +27,7 @@ int main(int argc, char *argv[]){
     }
 
     int sockfd;
-    if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
+    if((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
         perror("create_sockfd error");
         exit(EXIT_FAILURE);
     }
@@ -41,15 +41,10 @@ int main(int argc, char *argv[]){
     }
     servaddr.sin_port = htons(SERV_PORT);
 
-    if(connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0){
-        perror("connect_sockfd error");
-        exit(EXIT_FAILURE);
-    }
-
     char buf[BUF_SIZE];
     int nbuf = strlen(argv[1]);
-    send(sockfd, argv[1], nbuf, 0);
-    nbuf = recv(sockfd, buf, BUF_SIZE, 0);
+    sendto(sockfd, argv[1], nbuf, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
+    nbuf = recvfrom(sockfd, buf, BUF_SIZE, 0, NULL, NULL);
     buf[nbuf] = 0;
     printf("echo msg: %s\n", buf);
 

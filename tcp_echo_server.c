@@ -1,49 +1,72 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <malloc.h>
+#include <stdbool.h>
 #include <stdarg.h>
 #include <string.h>
+#include <unistd.h>
 #include <ctype.h>
 #include <errno.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <netdb.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/epoll.h>
 #include <sys/ioctl.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
+#include <netdb.h>
+#include <fcntl.h>
+
+#define LISTEN_PORT 8080
+#define BUF_SIZE 128
 
 int main(void){
-    int server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-
-    struct sockaddr_in server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = inet_addr("0.0.0.0");
-    server_addr.sin_port = htons(8080);
-
-    bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
-
-    listen(server_sock, 50);
-
-    int client_sock;
-    struct sockaddr_in client_addr;
-    socklen_t client_addr_len = sizeof(client_addr);
-    char msg[512+1];
-    while(1){
-        client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &client_addr_len);
-        int cnt = read(client_sock, msg, 512);
-        msg[cnt] = '\0';
-        if(!strcmp(msg, "exit")){
-            printf("close...\n");
-            close(client_sock);
-            break;
-        }
-        printf("recv&send: %s\n", msg);
-        write(client_sock, msg, cnt);
+    int listenfd;
+    if((listenfd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
+        perror("create_listenfd error");
+        exit(EXIT_FAILURE);
     }
 
-    close(server_sock);
+    struct sockaddr_in servaddr;
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(LISTEN_PORT);
+
+    if(bind(listenfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0){
+        perror("bind_listenfd error");
+        exit(EXIT_FAILURE);
+    }
+
+    if(listen(listenfd, SOMAXCONN) < 0){
+        perror("listen_listenfd error");
+        exit(EXIT_FAILURE);
+    }
+
+    int connfd;
+    struct sockaddr_in peeraddr;
+    socklen_t peerlen;
+    char buf[BUF_SIZE];
+    int nbuf;
+
+    for(;;){
+        if((connfd = accept(listenfd, (struct sockaddr *)&peeraddr, &peerlen)) < 0){
+            perror("accept_listenfd error");
+            continue;
+        }
+
+        nbuf = recv(connfd, buf, BUF_SIZE, 0);
+        buf[nbuf] = 0;
+        if(!strcmp(buf, "exit")){
+            printf("exit_server\n");
+            close(connfd);
+            break;
+        }
+        printf("new conn(%s:%d); msg: %s\n", inet_ntoa(peeraddr.sin_addr), ntohs(peeraddr.sin_port), buf);
+        send(connfd, buf, nbuf, 0);
+        close(connfd);
+    }
+
+    close(listenfd);
     return 0;
 }
